@@ -6,7 +6,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import os
 
 # Получаем токен из переменной среды (удобно для Railway/Render)
-BOT_TOKEN = os.getenv("8003816839:AAE_PcHtbF8TqRXTrYB4Te6QikWCJTJbGPk")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Лимит на покупку USDT (можешь менять)
 BUY_LIMIT = 88.80
