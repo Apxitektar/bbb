@@ -1,69 +1,54 @@
 import logging
-import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-
 import os
 
-# Получаем токен из переменной среды (удобно для Railway/Render)
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+BUY_LIMIT = 88.6  # Можно менять через команду
 
-# Лимит на покупку USDT (можешь менять)
-BUY_LIMIT = 88.80
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Настройка логгирования
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-# Получение лучшей цены покупки USDT в KGS (Bybit P2P)
-async def get_buy_price():
-    url = "https://api2.bybit.com/fiat/otc/v1/trading-pairs?userId=0&tokenId=USDT&currencyId=KGS&payment=all&side=buy&size=5&page=1"
-    response = requests.get(url, timeout=10)
-    print("Raw response:", response.text)  # <-- Эта строка для диагностики!
-    data = response.json()
-    items = data.get("result", {}).get("items", [])
-    if not items:
-        raise Exception("Нет подходящих объявлений на покупку USDT за KGS.")
-    best = items[0]
-    return float(best["price"])
-
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Бот запущен. Жду возможности арбитража...")
 
-# /check
-async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def set_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global BUY_LIMIT
     try:
-        price = await get_buy_price()
-        if price < BUY_LIMIT:
-            await update.message.reply_text(
-                f"ВНИМАНИЕ! Цена USDT ниже лимита: {price} KGS (лимит {BUY_LIMIT})"
-            )
-        else:
-            await update.message.reply_text(
-                f"Текущий курс покупки: {price} KGS (лимит {BUY_LIMIT})"
-            )
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка при получении курса: {e}")
-
-# /setlimit 88.60
-async def setlimit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global BUY_LIMIT
-    try:
-        new_limit = float(context.args[0])
-        BUY_LIMIT = new_limit
+        BUY_LIMIT = float(context.args[0])
         await update.message.reply_text(f"Лимит на покупку теперь: {BUY_LIMIT} KGS")
-    except Exception:
-        await update.message.reply_text("Используй так: /setlimit 88.60")
+    except:
+        await update.message.reply_text("Ошибка: введите лимит числом, например /setlimit 88.50")
 
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("check", check))
-    app.add_handler(CommandHandler("setlimit", setlimit))
+async def profit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        text = update.message.text.replace('/profit', '').strip()
+        parts = dict(part.split('=') for part in text.split())
 
-    print("Бот запущен...")
-    app.run_polling()
+        buy_price = float(parts['купил'])
+        sell_price = float(parts['продал'])
+        amount = float(parts['сумма'])
+
+        spent = buy_price * amount
+        earned = sell_price * amount
+        profit = earned - spent
+        status = "ПРИБЫЛЬ" if profit > 0 else "УБЫТОК"
+
+        await update.message.reply_text(
+            f"📊 {status}:\n"
+            f"• Куплено: {amount} USDT по {buy_price} = {spent:.2f} KGS\n"
+            f"• Продажа по {sell_price} = {earned:.2f} KGS\n"
+            f"• Разница: {profit:.2f} KGS"
+        )
+
+    except Exception as e:
+        logger.error(e)
+        await update.message.reply_text("❌ Ошибка. Формат: /profit купил=88.50 продал=84.10 сумма=11.29")
 
 if __name__ == '__main__':
-    main()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("setlimit", set_limit))
+    app.add_handler(CommandHandler("profit", profit))
+    print("Бот запущен.")
+    app.run_polling()
