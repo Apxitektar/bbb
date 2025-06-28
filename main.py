@@ -18,6 +18,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 async def get_buy_price():
     url = "https://api2.bybit.com/fiat/otc/v1/trading-pairs?userId=0&tokenId=USDT&currencyId=KGS&payment=all&side=buy&size=5&page=1"
     response = requests.get(url, timeout=10)
+    print("Raw response:", response.text)  # <-- Эта строка для диагностики!
     data = response.json()
     items = data.get("result", {}).get("items", [])
     if not items:
