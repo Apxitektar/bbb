@@ -1,73 +1,66 @@
-import os
 import logging
 import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "TOKEN_NOT_SET")
+import os
 
+# Получаем токен из переменной среды (удобно для Railway/Render)
+BOT_TOKEN = os.getenv("8003816839:AAE_PcHtbF8TqRXTrYB4Te6QikWCJTJbGPk")
+
+# Лимит на покупку USDT (можешь менять)
+BUY_LIMIT = 88.80
+
+# Настройка логгирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-async def get_price():
-    try:
-        headers = {"Content-Type": "application/json"}
-        buy_payload = {
-            "userId": "",
-            "tokenId": "USDT",
-            "currencyId": "KGS",
-            "payment": [],
-            "side": "BUY",
-            "size": 1,
-            "page": 1
-        }
-        sell_payload = {
-            "userId": "",
-            "tokenId": "USDT",
-            "currencyId": "KGS",
-            "payment": [],
-            "side": "SELL",
-            "size": 1,
-            "page": 1
-        }
+# Получение лучшей цены покупки USDT в KGS (Bybit P2P)
+async def get_buy_price():
+    url = "https://api2.bybit.com/fiat/otc/v1/trading-pairs?userId=0&tokenId=USDT&currencyId=KGS&payment=all&side=buy&size=5&page=1"
+    response = requests.get(url, timeout=10)
+    data = response.json()
+    items = data.get("result", {}).get("items", [])
+    if not items:
+        raise Exception("Нет подходящих объявлений на покупку USDT за KGS.")
+    best = items[0]
+    return float(best["price"])
 
-        buy_response = requests.post("https://api2.bybit.com/fiat/otc/item/online", json=buy_payload, headers=headers, timeout=10)
-        buy_data = buy_response.json()
-        sell_response = requests.post("https://api2.bybit.com/fiat/otc/item/online", json=sell_payload, headers=headers, timeout=10)
-        sell_data = sell_response.json()
-
-        if "result" in buy_data and "items" in buy_data["result"] and len(buy_data["result"]["items"]) > 0:
-            buy_price = float(buy_data["result"]["items"][0]["price"])
-        else:
-            buy_price = None
-
-        if "result" in sell_data and "items" in sell_data["result"] and len(sell_data["result"]["items"]) > 0:
-            sell_price = float(sell_data["result"]["items"][0]["price"])
-        else:
-            sell_price = None
-
-        if buy_price is None and sell_price is None:
-            return "Нет подходящих объявлений на покупку и продажу USDT за KGS."
-        elif buy_price is None:
-            return f"Нет объявлений на покупку USDT за KGS. Продажа: {sell_price} KGS."
-        elif sell_price is None:
-            return f"Покупка USDT: {buy_price} KGS. Нет объявлений на продажу."
-        else:
-            return f"Курс USDT: покупка {buy_price} KGS, продажа {sell_price} KGS"
-
-    except Exception as e:
-        return f"Ошибка при получении курса:\n{str(e)}"
-
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Бот запущен. Жду возможности арбитража...")
 
+# /check
 async def check(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    price = await get_price()
-    await update.message.reply_text(price)
+    global BUY_LIMIT
+    try:
+        price = await get_buy_price()
+        if price < BUY_LIMIT:
+            await update.message.reply_text(
+                f"ВНИМАНИЕ! Цена USDT ниже лимита: {price} KGS (лимит {BUY_LIMIT})"
+            )
+        else:
+            await update.message.reply_text(
+                f"Текущий курс покупки: {price} KGS (лимит {BUY_LIMIT})"
+            )
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при получении курса: {e}")
+
+# /setlimit 88.60
+async def setlimit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global BUY_LIMIT
+    try:
+        new_limit = float(context.args[0])
+        BUY_LIMIT = new_limit
+        await update.message.reply_text(f"Лимит на покупку теперь: {BUY_LIMIT} KGS")
+    except Exception:
+        await update.message.reply_text("Используй так: /setlimit 88.60")
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("check", check))
+    app.add_handler(CommandHandler("setlimit", setlimit))
+
     print("Бот запущен...")
     app.run_polling()
 
